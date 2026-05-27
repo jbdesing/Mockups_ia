@@ -486,7 +486,7 @@ async function startServer() {
   } else {
     console.log("[Server Mode] Starting in PRODUCTION mode (serving pre-compiled dist folder)");
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.use((req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
