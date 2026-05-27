@@ -2,6 +2,11 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Stripe from 'stripe';
+import WebSocket from 'ws';
+
+// Polyfill WebSocket globally for older Node.js versions (< 22) used by Supabase client
+(global as any).WebSocket = WebSocket;
+
 import { createClient } from '@supabase/supabase-js';
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 
