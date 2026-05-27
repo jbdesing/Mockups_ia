@@ -52,7 +52,7 @@ export const downloadBase64Image = (base64Data: string, filename: string) => {
     document.body.removeChild(link);
 };
 
-export const flattenImageOnBackground = (base64Str: string, bgColorHex: string | null, topPaddingPercent = 0): Promise<string> => {
+export const flattenImageOnBackground = (base64Str: string, bgColorHex: string | null, topPaddingPercent = 0, printSizePercent = 45): Promise<string> => {
     return new Promise((resolve) => {
         const img = new Image();
         img.src = base64Str;
@@ -69,11 +69,23 @@ export const flattenImageOnBackground = (base64Str: string, bgColorHex: string |
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                 }
                 
-                const scaleFactor = 1 - topPaddingPercent / 100;
-                const drawWidth = canvas.width * scaleFactor;
-                const drawHeight = canvas.height * scaleFactor;
+                // Proportional print scaling calculation
+                const sizeFactor = printSizePercent / 100;
+                let drawWidth = canvas.width * sizeFactor;
+                let drawHeight = canvas.height * sizeFactor;
+                
+                let shiftY = canvas.height * (topPaddingPercent / 100);
+
+                // Auto-scale to prevent overflowing the bottom of the canvas
+                if (shiftY + drawHeight > canvas.height) {
+                    const maxAllowedHeight = canvas.height - shiftY;
+                    const overflowScale = maxAllowedHeight / drawHeight;
+                    drawHeight = maxAllowedHeight;
+                    drawWidth = drawWidth * overflowScale;
+                }
+
+                // Center horizontally
                 const shiftX = (canvas.width - drawWidth) / 2;
-                const shiftY = canvas.height * (topPaddingPercent / 100);
                 
                 ctx.drawImage(img, shiftX, shiftY, drawWidth, drawHeight);
             }

@@ -13,86 +13,6 @@ import { PlanSelector } from './components/PlanSelector';
 import { MyAccount } from './components/MyAccount';
 import { supabase } from './supabase';
 
-interface ImageUploaderProps {
-  label: string;
-  imageState: ImagesState[ImageLocation];
-  onImageChange: (file: File) => void;
-  onSizeChange: (size: PrintSize) => void;
-  onMarkEmpty: (isEmpty: boolean) => void;
-  onRemove: () => void;
-}
-
-const ImageUploader: React.FC<ImageUploaderProps> = ({ label, imageState, onImageChange, onSizeChange, onMarkEmpty, onRemove }) => {
-  const uniqueId = `file-upload-${label.toLowerCase().replace(' ', '-')}`;
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg'];
-    if (file && allowedTypes.includes(file.type)) {
-      onImageChange(file);
-    }
-  };
-  
-  return (
-    <fieldset className={`p-3 border rounded-xl space-y-3 transition-all duration-300 group bg-base-100/30 ${imageState?.isMarkedEmpty ? 'border-red-500/50 bg-red-500/5' : 'border-base-300 hover:border-brand-primary/50'}`}>
-      <legend className="px-2 text-[10px] font-black uppercase text-gray-500 tracking-widest group-hover:text-brand-primary transition-colors flex items-center gap-2">
-        {label}
-        {imageState?.isMarkedEmpty && <span className="text-red-500 text-[8px] animate-pulse">● VAZIO REFORÇADO</span>}
-      </legend>
-      
-      <div className="flex justify-center px-4 pt-4 pb-4 border-2 border-base-300 border-dashed rounded-xl transition-all duration-300 hover:border-brand-primary hover:bg-brand-primary/5 relative">
-        {imageState?.base64 && (
-          <button 
-            onClick={(e) => { e.stopPropagation(); onRemove(); }}
-            className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors z-10 shadow-lg"
-            title="Remover imagem"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-        )}
-        <div className="space-y-1 text-center">
-           {imageState?.base64 ? (
-            <div className="relative group/preview inline-block">
-                <img src={imageState.base64} alt="Preview" className="mx-auto h-20 w-20 object-contain rounded-lg shadow-sm transition-transform duration-300 group-hover/preview:scale-110" />
-            </div>
-          ) : (
-             <svg className={`mx-auto h-10 w-10 transition-colors duration-300 ${imageState?.isMarkedEmpty ? 'text-red-500/30' : 'text-gray-400 group-hover:text-brand-primary'}`} stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 4v.01M28 8L36 16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          )}
-          <div className="flex text-sm text-gray-400 justify-center mt-2 gap-2">
-            <label htmlFor={uniqueId} className="relative cursor-pointer bg-base-300 rounded-lg font-black text-[10px] uppercase tracking-widest text-brand-primary hover:text-brand-secondary focus-within:outline-none transition-all duration-200 px-3 py-1.5 shadow-sm border border-base-300">
-              <span>{imageState?.base64 ? 'Trocar' : 'Carregar'}</span>
-              <input id={uniqueId} name={uniqueId} type="file" className="sr-only" accept="image/png, image/jpeg, image/jpg" onChange={handleFileChange} />
-            </label>
-            {!imageState?.base64 && (
-              <button 
-                type="button" 
-                onClick={() => onMarkEmpty(!imageState?.isMarkedEmpty)}
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border ${imageState?.isMarkedEmpty ? 'bg-red-500 text-white border-red-500 shadow-lg shadow-red-500/20' : 'bg-base-300 text-gray-500 border-base-300 hover:bg-base-200'}`}
-              >
-                {imageState?.isMarkedEmpty ? 'Desmarcar' : 'Desenho Maior'}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-      
-      {imageState?.base64 && (
-        <div className="animate-fadeIn pt-2">
-          <label className="text-[10px] font-black uppercase text-gray-500 tracking-tighter mb-2 block">Tamanho da Estampa</label>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => onSizeChange('localized')} className={`text-[10px] font-black uppercase tracking-widest px-2 py-2 rounded-lg transition-all duration-200 w-full ${imageState.size === 'localized' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20' : 'bg-base-300 text-gray-500 hover:bg-base-300/80'}`}>
-              Localizado
-            </button>
-            <button type="button" onClick={() => onSizeChange('filled')} className={`text-[10px] font-black uppercase tracking-widest px-2 py-2 rounded-lg transition-all duration-200 w-full ${imageState.size === 'filled' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20' : 'bg-base-300 text-gray-500 hover:bg-base-300/80'}`}>
-              Preenchido
-            </button>
-          </div>
-        </div>
-      )}
-    </fieldset>
-  );
-};
-
 // --- MAIN APP COMPONENT ---
 
 const CATEGORIES: { id: Category; name: string; description?: string }[] = [
@@ -219,7 +139,9 @@ const PremiumWelcome: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
 const MainApp: React.FC = () => {
   const { user, incrementUsage, addToHistory } = useAuth();
-  const [images, setImages] = useState<ImagesState>({});
+  const [designImage, setDesignImage] = useState<{ file: File | null, base64: string | null } | null>(null);
+  const [printPosition, setPrintPosition] = useState<ImageLocation>('front');
+  const [printSize, setPrintSize] = useState<number>(45);
   const [category, setCategory] = useState<Category>('camiseta-masculina');
   const [color, setColor] = useState<string>('white');
   const [prompt, setPrompt] = useState<string>('');
@@ -272,45 +194,19 @@ const MainApp: React.FC = () => {
     return true;
   };
 
-  const handleImageChange = async (location: ImageLocation, file: File) => {
-    try {
-      const base64 = await fileToBase64(file) as string;
-      const resized = await resizeImage(base64, 1024, 1024);
-      setImages(prev => ({
-        ...prev,
-        [location]: { file, base64: resized, size: prev[location]?.size || 'localized', isMarkedEmpty: false }
-      }));
-      setError(null);
-    } catch (err) {
-      setError('Falha ao carregar a imagem.');
-    }
-  };
-
-  const handleSizeChange = (location: ImageLocation, size: PrintSize) => {
-    setImages(prev => ({
-      ...prev,
-      [location]: prev[location] ? { ...prev[location]!, size } : undefined
-    }));
-  };
-
-  const handleMarkEmpty = (location: ImageLocation, isEmpty: boolean) => {
-    setImages(prev => ({
-      ...prev,
-      [location]: { 
-        file: null, 
-        base64: null, 
-        size: 'localized', 
-        isMarkedEmpty: isEmpty 
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+    if (file && allowedTypes.includes(file.type)) {
+      try {
+        const base64 = await fileToBase64(file) as string;
+        const resized = await resizeImage(base64, 1024, 1024);
+        setDesignImage({ file, base64: resized });
+        setError(null);
+      } catch (err) {
+        setError('Falha ao carregar a imagem.');
       }
-    }));
-  };
-
-  const handleRemoveImage = (location: ImageLocation) => {
-    setImages(prev => {
-      const newState = { ...prev };
-      delete newState[location];
-      return newState;
-    });
+    }
   };
 
   /* Secure server-side call wrapper */
@@ -352,11 +248,8 @@ const MainApp: React.FC = () => {
     setError(null);
     if (!checkUsageLimit()) return;
 
-    const activeLocs = (Object.keys(images) as ImageLocation[]).filter(loc => images[loc]?.base64);
-    const emptyLocs = (Object.keys(images) as ImageLocation[]).filter(loc => images[loc]?.isMarkedEmpty);
-
-    if (activeLocs.length === 0 && emptyLocs.length === 0) {
-      setError('Envie pelo menos uma estampa ou marque áreas como vazias.');
+    if (!designImage?.base64) {
+      setError('Envie uma estampa para começar.');
       return;
     }
 
@@ -365,7 +258,6 @@ const MainApp: React.FC = () => {
     setGeneratedImages([]);
 
     const details = categoryMapping[category];
-    const orderedBase64 = activeLocs.map(loc => images[loc]!.base64!);
     
     // Find the hex color for the selected mockup color
     const selectedColorObj = COLORS.find(c => c.value === color);
@@ -373,37 +265,30 @@ const MainApp: React.FC = () => {
       ? (selectedColorObj.hex !== 'gradient' ? selectedColorObj.hex : null)
       : (color.startsWith('#') ? color : null);
 
-    // Apply background flattening and collar distance shift to prevent halos and adjust neckline height
-    const processedImages = await Promise.all(activeLocs.map(loc => 
-      flattenImageOnBackground(images[loc]!.base64!, targetBgHex, collarDistance)
-    ));
+    // Apply background flattening, collar distance shift, and print size percentage scaling
+    const processedImage = await flattenImageOnBackground(designImage.base64, targetBgHex, collarDistance, printSize);
     
     const colorDesc = color === 'all colors' 
       ? 'a complementary color' 
       : (color.startsWith('#') ? `custom hex color ${color}` : color);
     
-    const labels: Record<string, string> = { front: 'chest/front', back: 'back', leftSleeve: 'left sleeve', rightSleeve: 'right sleeve' };
+    const isBack = printPosition === 'back';
+    const activeLocDesc = isBack ? 'back' : 'chest/front';
+    const oppositeLocDesc = isBack ? 'chest/front' : 'back';
+    const finalEmptyInstruction = `IMPORTANT: The ${oppositeLocDesc} of the shirt MUST be COMPLETELY PLAIN and solid ${colorDesc}, with absolutely NO designs, text, or patterns.`;
 
-    const itemsDesc = activeLocs.map(loc => {
-        return `${labels[loc]} (${images[loc]!.size === 'filled' ? 'large scale' : 'small scale'})`;
-    }).join(', ');
-
-    const mandatoryEmptyDesc = emptyLocs.map(loc => {
-        return `The ${labels[loc]} of the shirt MUST be COMPLETELY PLAIN and solid ${colorDesc}, with absolutely NO designs, text, or patterns.`;
-    }).join(' ');
-
-    const finalEmptyInstruction = emptyLocs.length > 0 ? `IMPORTANT: ${mandatoryEmptyDesc}` : '';
-
-    /* Mixed variations of human models and product-only shots for realism and variety */
-    const selectedVariations = [
+    const selectedVariations = isBack ? [
+      { type: 'human', suffix: 'Back view shot, showing the rear of the t-shirt, model from behind with high-end studio lighting.' },
+      { type: 'product', suffix: 'High-quality product only shot showing the back of the t-shirt, rear flat lay view.' }
+    ] : [
       { type: 'human', suffix: 'Frontal shot with high-end studio lighting.' },
       { type: 'product', suffix: 'High-quality product only shot, clean flat lay.' }
     ];
 
     try {
       const promises = selectedVariations.map(async (v, idx) => {
-        const finalPrompt = `${v.type === 'human' ? details.model : 'High-quality product only shot of a'} wearing ${details.product} in ${colorDesc}. ${activeLocs.length > 0 ? `Art correctly applied on ${itemsDesc}.` : ''} ${finalEmptyInstruction} ${prompt}. ${v.suffix} Photorealistic high resolution.`;
-        const base64 = await callGemini({ images: processedImages, prompt: finalPrompt });
+        const finalPrompt = `${v.type === 'human' ? details.model : 'High-quality product only shot of a'} wearing ${details.product} in ${colorDesc}. Art correctly applied on ${activeLocDesc}. ${finalEmptyInstruction} ${prompt}. ${v.suffix} Photorealistic high resolution.`;
+        const base64 = await callGemini({ images: [processedImage], prompt: finalPrompt });
         return { id: `${Date.now()}-${idx}`, src: base64, prompt: finalPrompt };
       });
 
@@ -424,11 +309,12 @@ const MainApp: React.FC = () => {
 
   const handleRedoSingle = async (imageToRedo: GeneratedImage) => {
     setError(null);
+    if (!designImage?.base64) {
+      setError('Nenhuma imagem carregada para refazer.');
+      return;
+    }
     setIsLoading(true);
     setIsFinishing(false);
-
-    const activeLocs = (Object.keys(images) as ImageLocation[]).filter(loc => images[loc]?.base64);
-    const orderedBase64 = activeLocs.map(loc => images[loc]!.base64!);
 
     // Find the hex color for the selected mockup color
     const selectedColorObj = COLORS.find(c => c.value === color);
@@ -436,13 +322,11 @@ const MainApp: React.FC = () => {
       ? (selectedColorObj.hex !== 'gradient' ? selectedColorObj.hex : null)
       : (color.startsWith('#') ? color : null);
 
-    // Apply background flattening and collar distance shift to prevent halos and adjust neckline height
-    const processedImages = await Promise.all(activeLocs.map(loc => 
-      flattenImageOnBackground(images[loc]!.base64!, targetBgHex, collarDistance)
-    ));
+    // Apply background flattening, collar distance shift, and print size percentage scaling
+    const processedImage = await flattenImageOnBackground(designImage.base64, targetBgHex, collarDistance, printSize);
 
     try {
-      const base64 = await callGemini({ images: processedImages, prompt: imageToRedo.prompt });
+      const base64 = await callGemini({ images: [processedImage], prompt: imageToRedo.prompt });
       
       setGeneratedImages(prev => prev.map(img => 
         img.id === imageToRedo.id ? { ...img, src: base64 } : img
@@ -487,12 +371,87 @@ const MainApp: React.FC = () => {
                 <div className="bg-base-200/80 backdrop-blur-xl rounded-3xl p-6 space-y-6 sticky top-24 shadow-2xl border border-white/5">
                     <UsageBar />
                     <form onSubmit={handleSubmit} className="space-y-6">
-                        <div className="animate-slideIn">
-                            <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">1. Configuração de Áreas</label>
-                            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                                <ImageUploader label="Frente" imageState={images.front} onImageChange={(file) => handleImageChange('front', file)} onSizeChange={(size) => handleSizeChange('front', size)} onMarkEmpty={(empty) => handleMarkEmpty('front', empty)} onRemove={() => handleRemoveImage('front')} />
-                                <ImageUploader label="Costas" imageState={images.back} onImageChange={(file) => handleImageChange('back', file)} onSizeChange={(size) => handleSizeChange('back', size)} onMarkEmpty={(empty) => handleMarkEmpty('back', empty)} onRemove={() => handleRemoveImage('back')} />
+                        <div className="animate-slideIn space-y-4">
+                            <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest">1. Configuração de Áreas</label>
+                            
+                            {/* Unified Drag & Drop Box */}
+                            <div className={`p-4 border rounded-2xl transition-all duration-300 group bg-base-100/30 ${!designImage ? 'border-base-300 hover:border-brand-primary/50' : 'border-brand-primary/30'}`}>
+                                <div className="flex justify-center px-4 pt-4 pb-4 border-2 border-base-300 border-dashed rounded-xl transition-all duration-300 hover:border-brand-primary hover:bg-brand-primary/5 relative">
+                                    {designImage?.base64 && (
+                                        <button 
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); setDesignImage(null); }}
+                                            className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors z-10 shadow-lg shadow-red-500/20"
+                                            title="Remover imagem"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                        </button>
+                                    )}
+                                    <div className="space-y-1 text-center w-full">
+                                        {designImage?.base64 ? (
+                                            <div className="relative group/preview inline-block">
+                                                <img src={designImage.base64} alt="Preview" className="mx-auto h-24 w-24 object-contain rounded-lg shadow-md transition-transform duration-300 group-hover/preview:scale-105" />
+                                            </div>
+                                        ) : (
+                                            <svg className="mx-auto h-12 w-12 transition-colors duration-300 text-gray-400 group-hover:text-brand-primary drop-shadow-sm" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 4v.01M28 8L36 16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                        )}
+                                        <div className="flex text-sm text-gray-400 justify-center mt-3">
+                                            <label htmlFor="design-file-upload" className="relative cursor-pointer bg-base-300 hover:bg-base-300/80 rounded-lg font-black text-[10px] uppercase tracking-widest text-brand-primary hover:text-brand-secondary focus-within:outline-none transition-all duration-200 px-4 py-2 shadow-sm border border-base-300">
+                                                <span>{designImage?.base64 ? 'Trocar Desenho' : 'Carregar Desenho'}</span>
+                                                <input id="design-file-upload" name="design-file-upload" type="file" className="sr-only" accept="image/png, image/jpeg, image/jpg" onChange={handleFileChange} />
+                                            </label>
+                                        </div>
+                                        <p className="text-[9px] text-gray-500 mt-2 font-bold tracking-wider">PNG, JPG até 10MB</p>
+                                    </div>
+                                </div>
                             </div>
+
+                            {/* Frente / Costas Segmented Toggle */}
+                            <div className="space-y-2">
+                                <label className="block text-[10px] font-black uppercase text-gray-400 tracking-widest">Local de Aplicação</label>
+                                <div className="grid grid-cols-2 gap-1.5 bg-base-300 p-1.5 rounded-xl border border-white/5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPrintPosition('front')}
+                                        className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'front' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
+                                    >
+                                        Frente
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPrintPosition('back')}
+                                        className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'back' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
+                                    >
+                                        Costas
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Proportional Size Slider */}
+                            {designImage?.base64 && (
+                                <div className="space-y-2 animate-fadeIn p-4 bg-base-300/50 rounded-2xl border border-white/5">
+                                    <div className="flex justify-between items-center">
+                                        <label htmlFor="printSize" className="text-[10px] font-black uppercase text-gray-400 tracking-widest">
+                                            Tamanho da Estampa
+                                        </label>
+                                        <span className="text-brand-primary font-black text-xs">{printSize}%</span>
+                                    </div>
+                                    <input
+                                        id="printSize"
+                                        type="range"
+                                        min="10"
+                                        max="100"
+                                        value={printSize}
+                                        onChange={(e) => setPrintSize(parseInt(e.target.value))}
+                                        className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary"
+                                    />
+                                    <div className="flex justify-between text-[8px] font-bold text-gray-500 uppercase tracking-tighter">
+                                        <span>Menor (10%)</span>
+                                        <span>Padrão (45%)</span>
+                                        <span>Máximo (100%)</span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <div className="animate-slideIn delay-150">
                             <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">2. Modelo</label>
