@@ -365,9 +365,13 @@ const MainApp: React.FC = () => {
     const details = categoryMapping[category];
     const orderedBase64 = activeLocs.map(loc => images[loc]!.base64!);
     
-    // Apply white background flattening ONLY when the mockup color is white to prevent regressions
-    const processedImages = color === 'white'
-      ? await Promise.all(activeLocs.map(loc => flattenImageOnBackground(images[loc]!.base64!, '#FFFFFF')))
+    // Find the hex color for the selected mockup color
+    const selectedColorObj = COLORS.find(c => c.value === color);
+    const targetBgHex = selectedColorObj && selectedColorObj.hex !== 'gradient' ? selectedColorObj.hex : null;
+
+    // Apply background flattening using the exact mockup color to prevent halos and ensure perfect blending
+    const processedImages = targetBgHex
+      ? await Promise.all(activeLocs.map(loc => flattenImageOnBackground(images[loc]!.base64!, targetBgHex)))
       : orderedBase64;
     
     const colorDesc = color === 'all colors' ? 'a complementary color' : color;
@@ -420,9 +424,13 @@ const MainApp: React.FC = () => {
     const activeLocs = (Object.keys(images) as ImageLocation[]).filter(loc => images[loc]?.base64);
     const orderedBase64 = activeLocs.map(loc => images[loc]!.base64!);
 
-    // Apply white background flattening ONLY when the mockup color is white to prevent regressions
-    const processedImages = color === 'white'
-      ? await Promise.all(activeLocs.map(loc => flattenImageOnBackground(images[loc]!.base64!, '#FFFFFF')))
+    // Find the hex color for the selected mockup color
+    const selectedColorObj = COLORS.find(c => c.value === color);
+    const targetBgHex = selectedColorObj && selectedColorObj.hex !== 'gradient' ? selectedColorObj.hex : null;
+
+    // Apply background flattening using the exact mockup color to prevent halos and ensure perfect blending
+    const processedImages = targetBgHex
+      ? await Promise.all(activeLocs.map(loc => flattenImageOnBackground(images[loc]!.base64!, targetBgHex)))
       : orderedBase64;
 
     try {
