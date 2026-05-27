@@ -460,8 +460,21 @@ async function startServer() {
     }
   });
 
-  const distPath = path.join(process.cwd(), 'dist');
-  const isProduction = fs.existsSync(path.join(distPath, 'index.html'));
+  // Bulletproof search for the compiled "dist" directory relative to this file's folder (__dirname)
+  let distPath = path.join(__dirname, 'dist');
+  let isProduction = fs.existsSync(path.join(distPath, 'index.html'));
+
+  if (!isProduction) {
+    // If running from inside the dist/ folder itself (standard for built output), dist is the parent folder
+    distPath = path.join(__dirname, '..', 'dist');
+    isProduction = fs.existsSync(path.join(distPath, 'index.html'));
+    
+    if (!isProduction) {
+      // Final fallback to process.cwd()
+      distPath = path.join(process.cwd(), 'dist');
+      isProduction = fs.existsSync(path.join(distPath, 'index.html'));
+    }
+  }
 
   if (!isProduction) {
     console.log("[Server Mode] Starting in DEVELOPMENT mode (Vite middleware)");
