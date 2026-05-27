@@ -460,14 +460,18 @@ async function startServer() {
     }
   });
 
-  if (process.env.NODE_ENV !== 'production') {
+  const distPath = path.join(process.cwd(), 'dist');
+  const isProduction = fs.existsSync(path.join(distPath, 'index.html'));
+
+  if (!isProduction) {
+    console.log("[Server Mode] Starting in DEVELOPMENT mode (Vite middleware)");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    console.log("[Server Mode] Starting in PRODUCTION mode (serving pre-compiled dist folder)");
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
