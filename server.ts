@@ -73,7 +73,7 @@ const mpPayment = new Payment(mpClient);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
   // Create Checkout Session
   app.post('/api/create-checkout-session', express.json(), async (req, res) => {

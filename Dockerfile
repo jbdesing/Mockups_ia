@@ -24,6 +24,7 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV PORT=80
 
 # Copy built assets and server from the builder stage
 COPY --from=builder /app/dist ./dist
@@ -33,7 +34,7 @@ COPY --from=builder /app/package*.json ./
 RUN npm ci --omit=dev
 
 # Expose the application port
-EXPOSE 3000
+EXPOSE 80
 
 # Start the server
 CMD ["npm", "start"]
