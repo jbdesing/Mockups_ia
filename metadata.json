@@ -1,0 +1,5 @@
+{
+  "name": "MOCKUPS.AI",
+  "description": "An application that generates professional product mockups using AI, integrated with Firebase for user profiles and history. Users can upload a PNG image, choose a context category and color, and provide an optional style description to generate four unique mockup images.",
+  "requestFramePermissions": []
+}
