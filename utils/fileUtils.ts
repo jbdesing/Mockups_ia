@@ -52,7 +52,7 @@ export const downloadBase64Image = (base64Data: string, filename: string) => {
     document.body.removeChild(link);
 };
 
-export const flattenImageOnBackground = (base64Str: string, bgColorHex: string): Promise<string> => {
+export const flattenImageOnBackground = (base64Str: string, bgColorHex: string | null, topPaddingPercent = 0): Promise<string> => {
     return new Promise((resolve) => {
         const img = new Image();
         img.src = base64Str;
@@ -62,9 +62,20 @@ export const flattenImageOnBackground = (base64Str: string, bgColorHex: string):
             canvas.height = img.height;
             const ctx = canvas.getContext('2d');
             if (ctx) {
-                ctx.fillStyle = bgColorHex;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(img, 0, 0);
+                if (bgColorHex) {
+                    ctx.fillStyle = bgColorHex;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                } else {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+                
+                const scaleFactor = 1 - topPaddingPercent / 100;
+                const drawWidth = canvas.width * scaleFactor;
+                const drawHeight = canvas.height * scaleFactor;
+                const shiftX = (canvas.width - drawWidth) / 2;
+                const shiftY = canvas.height * (topPaddingPercent / 100);
+                
+                ctx.drawImage(img, shiftX, shiftY, drawWidth, drawHeight);
             }
             resolve(canvas.toDataURL('image/png'));
         };

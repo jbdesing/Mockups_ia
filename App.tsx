@@ -223,6 +223,7 @@ const MainApp: React.FC = () => {
   const [category, setCategory] = useState<Category>('camiseta-masculina');
   const [color, setColor] = useState<string>('white');
   const [prompt, setPrompt] = useState<string>('');
+  const [collarDistance, setCollarDistance] = useState<number>(10);
   /* Fulfill requirement: Default to 2 mockups (realistic and product only) */
   const NUM_MOCKUPS = 2;
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -233,6 +234,7 @@ const MainApp: React.FC = () => {
   const [showWelcome, setShowWelcome] = useState(false);
   
   const finishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const colorInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user && user.plan !== 'free') {
@@ -367,14 +369,18 @@ const MainApp: React.FC = () => {
     
     // Find the hex color for the selected mockup color
     const selectedColorObj = COLORS.find(c => c.value === color);
-    const targetBgHex = selectedColorObj && selectedColorObj.hex !== 'gradient' ? selectedColorObj.hex : null;
+    const targetBgHex = selectedColorObj 
+      ? (selectedColorObj.hex !== 'gradient' ? selectedColorObj.hex : null)
+      : (color.startsWith('#') ? color : null);
 
-    // Apply background flattening using the exact mockup color to prevent halos and ensure perfect blending
-    const processedImages = targetBgHex
-      ? await Promise.all(activeLocs.map(loc => flattenImageOnBackground(images[loc]!.base64!, targetBgHex)))
-      : orderedBase64;
+    // Apply background flattening and collar distance shift to prevent halos and adjust neckline height
+    const processedImages = await Promise.all(activeLocs.map(loc => 
+      flattenImageOnBackground(images[loc]!.base64!, targetBgHex, collarDistance)
+    ));
     
-    const colorDesc = color === 'all colors' ? 'a complementary color' : color;
+    const colorDesc = color === 'all colors' 
+      ? 'a complementary color' 
+      : (color.startsWith('#') ? `custom hex color ${color}` : color);
     
     const labels: Record<string, string> = { front: 'chest/front', back: 'back', leftSleeve: 'left sleeve', rightSleeve: 'right sleeve' };
 
@@ -426,12 +432,14 @@ const MainApp: React.FC = () => {
 
     // Find the hex color for the selected mockup color
     const selectedColorObj = COLORS.find(c => c.value === color);
-    const targetBgHex = selectedColorObj && selectedColorObj.hex !== 'gradient' ? selectedColorObj.hex : null;
+    const targetBgHex = selectedColorObj 
+      ? (selectedColorObj.hex !== 'gradient' ? selectedColorObj.hex : null)
+      : (color.startsWith('#') ? color : null);
 
-    // Apply background flattening using the exact mockup color to prevent halos and ensure perfect blending
-    const processedImages = targetBgHex
-      ? await Promise.all(activeLocs.map(loc => flattenImageOnBackground(images[loc]!.base64!, targetBgHex)))
-      : orderedBase64;
+    // Apply background flattening and collar distance shift to prevent halos and adjust neckline height
+    const processedImages = await Promise.all(activeLocs.map(loc => 
+      flattenImageOnBackground(images[loc]!.base64!, targetBgHex, collarDistance)
+    ));
 
     try {
       const base64 = await callGemini({ images: processedImages, prompt: imageToRedo.prompt });
@@ -509,14 +517,60 @@ const MainApp: React.FC = () => {
                         <div className="animate-slideIn delay-200">
                             <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">3. Cor</label>
                             <div className="flex flex-wrap gap-2.5">
-                                {COLORS.map(c => (
-                                    <button type="button" key={c.value} onClick={() => setColor(c.value)} className={`w-8 h-8 rounded-full border-2 transition-all ${color === c.value ? 'border-brand-primary scale-110 shadow-lg' : 'border-base-300'}`} style={{ background: c.hex === 'gradient' ? 'linear-gradient(to right, #ef4444, #fbbf24, #3b82f6)' : c.hex }}></button>
-                                ))}
+                                {COLORS.map(c => {
+                                    if (c.hex === 'gradient') {
+                                        return (
+                                            <div key={c.value} className="relative inline-block">
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => colorInputRef.current?.click()} 
+                                                    className={`w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center relative overflow-hidden group/custom ${color.startsWith('#') ? 'border-brand-primary scale-110 shadow-lg' : 'border-base-300'}`} 
+                                                    style={{ background: color.startsWith('#') ? color : 'linear-gradient(to right, #ef4444, #fbbf24, #3b82f6)' }}
+                                                    title="Escolher cor personalizada"
+                                                >
+                                                    {!color.startsWith('#') && (
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-md group-hover/custom:scale-125 transition-transform"><path d="M12 5v14M5 12h14"/></svg>
+                                                    )}
+                                                </button>
+                                                <input 
+                                                    ref={colorInputRef} 
+                                                    type="color" 
+                                                    value={color.startsWith('#') ? color : '#4f46e5'} 
+                                                    onChange={e => setColor(e.target.value)} 
+                                                    className="sr-only" 
+                                                />
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <button type="button" key={c.value} onClick={() => setColor(c.value)} className={`w-8 h-8 rounded-full border-2 transition-all ${color === c.value ? 'border-brand-primary scale-110 shadow-lg' : 'border-base-300'}`} style={{ background: c.hex }}></button>
+                                    );
+                                })}
                             </div>
                         </div>
                         <div className="animate-slideIn delay-300">
                             <label htmlFor="prompt" className="block text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4">4. Estilo</label>
                             <textarea id="prompt" value={prompt} onChange={e => setPrompt(e.target.value)} rows={2} className="w-full bg-base-300 border border-base-300 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-brand-primary outline-none" placeholder="Ex: iluminação solar..."></textarea>
+                        </div>
+                        <div className="animate-slideIn delay-300">
+                            <label htmlFor="collarDistance" className="block text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 flex justify-between">
+                                <span>5. Posição da Estampa</span>
+                                <span className="text-brand-primary font-black">{collarDistance}%</span>
+                            </label>
+                            <input 
+                                id="collarDistance"
+                                type="range" 
+                                min="0" 
+                                max="35" 
+                                value={collarDistance} 
+                                onChange={e => setCollarDistance(parseInt(e.target.value))}
+                                className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary" 
+                            />
+                            <div className="flex justify-between text-[8px] font-bold text-gray-500 mt-1 uppercase tracking-tighter">
+                                <span>Mais Alto (0%)</span>
+                                <span>Padrão (10%)</span>
+                                <span>Mais Baixo (35%)</span>
+                            </div>
                         </div>
                         {error && <p className="text-red-400 text-[11px] font-bold p-2 bg-red-400/10 rounded-lg border border-red-400/20 animate-shake">{error}</p>}
                         <button type="submit" disabled={isLoading} className="w-full bg-gradient-to-r from-brand-primary to-brand-secondary text-white font-black py-5 rounded-2xl hover:brightness-110 transition-all shadow-xl shadow-brand-primary/20 uppercase tracking-[0.2em] text-[11px]">
