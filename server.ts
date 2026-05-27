@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Stripe from 'stripe';
@@ -478,6 +477,7 @@ async function startServer() {
 
   if (!isProduction) {
     console.log("[Server Mode] Starting in DEVELOPMENT mode (Vite middleware)");
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
