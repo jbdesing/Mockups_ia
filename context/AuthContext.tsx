@@ -49,6 +49,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const isSigningUp = useRef(false);
+  const isInitialLoad = useRef(true);
 
   useEffect(() => {
     let customerSubscription: any = null;
@@ -146,7 +147,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const handleAuthChange = async (event: string, session: any) => {
       if (session?.user) {
-        setLoading(true);
+        if (isInitialLoad.current) {
+          setLoading(true);
+        }
         const sessionUser = session.user;
         
         // Initial Fetch
@@ -172,9 +175,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .subscribe();
 
         setLoading(false);
+        isInitialLoad.current = false;
       } else {
         setUser(null);
         setLoading(false);
+        isInitialLoad.current = true; // Reset so next login gets a clean loading screen
         if (customerSubscription) supabase.removeChannel(customerSubscription);
         if (downloadsSubscription) supabase.removeChannel(downloadsSubscription);
       }
