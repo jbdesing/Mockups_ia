@@ -506,10 +506,10 @@ const MainApp: React.FC = () => {
     const numMockups = (generateModel ? 1 : 0) + (generateFlatLay ? 1 : 0);
     return (
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* 1. Configuração de Áreas */}
+        {/* 1. Enviar Estampa */}
         <div className="animate-slideIn space-y-4">
           <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest">
-            1. Configuração de Áreas
+            1. Enviar Estampa
           </label>
           
           {/* Drag & Drop Box */}
@@ -544,57 +544,100 @@ const MainApp: React.FC = () => {
             </div>
           </div>
 
-          {/* Local de Aplicação */}
-          <div className="space-y-2">
-            <label className="block text-[10px] font-black uppercase text-gray-400 tracking-widest">Local de Aplicação</label>
-            <div className="grid grid-cols-2 gap-1.5 bg-base-300 p-1.5 rounded-xl border border-white/5">
-              <button
-                type="button"
-                onClick={() => setPrintPosition('front')}
-                className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'front' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
-              >
-                Frente
-              </button>
-              <button
-                type="button"
-                onClick={() => setPrintPosition('back')}
-                className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'back' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
-              >
-                Costas
-              </button>
-            </div>
-          </div>
-
-          {/* Proportional Size Slider */}
+          {/* Ajustes Finos (Grupo de Sliders no Desktop) */}
           {designImage?.base64 && (
-            <div className="space-y-2 animate-fadeIn p-4 bg-base-300/50 rounded-2xl border border-white/5">
-              <div className="flex justify-between items-center">
-                <label htmlFor="printSizeDesktop" className="text-[10px] font-black uppercase text-gray-400 tracking-widest">
-                  Tamanho da Estampa
-                </label>
-                <span className="text-brand-primary font-black text-xs">{printSize}%</span>
+            <div className="space-y-4 p-4 bg-base-300/50 rounded-2xl border border-white/5 animate-fadeIn">
+              <span className="block text-[10px] font-black uppercase text-gray-400 tracking-widest">Ajustes Finos da Estampa</span>
+              
+              {/* Tamanho da Estampa */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] font-bold uppercase text-gray-400 tracking-wider">Tamanho da Estampa</span>
+                  <span className="text-brand-primary font-black text-xs">{printSize}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="10"
+                  max="100"
+                  value={printSize}
+                  onChange={(e) => setPrintSize(parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary"
+                />
               </div>
-              <input
-                id="printSizeDesktop"
-                type="range"
-                min="10"
-                max="100"
-                value={printSize}
-                onChange={(e) => setPrintSize(parseInt(e.target.value))}
-                className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary"
-              />
-              <div className="flex justify-between text-[8px] font-bold text-gray-500 uppercase tracking-tighter">
-                <span>Menor (10%)</span>
-                <span>Padrão (45%)</span>
-                <span>Máximo (100%)</span>
+
+              {/* Ajuste Vertical */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] font-bold uppercase text-gray-400 tracking-wider">Ajuste Vertical</span>
+                  <span className="text-brand-primary font-black text-xs">{collarDistance}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="35"
+                  value={collarDistance}
+                  onChange={(e) => setCollarDistance(parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary"
+                />
+              </div>
+
+              {/* Ajuste Horizontal */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] font-bold uppercase text-gray-400 tracking-wider">Ajuste Horizontal</span>
+                  <span className="text-brand-primary font-black text-xs">{printOffsetX > 0 ? `+${printOffsetX}` : printOffsetX}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="-30"
+                  max="30"
+                  value={printOffsetX}
+                  onChange={(e) => setPrintOffsetX(parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary"
+                />
               </div>
             </div>
           )}
         </div>
 
-        {/* 2. Modelo */}
+        {/* 2. Local de Aplicação */}
+        <div className="animate-slideIn space-y-2">
+          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest">2. Local de Aplicação</label>
+          <div className="grid grid-cols-2 gap-1.5 bg-base-300 p-1.5 rounded-xl border border-white/5">
+            <button
+              type="button"
+              onClick={() => setPrintPosition('front')}
+              className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'front' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
+            >
+              Frente
+            </button>
+            <button
+              type="button"
+              onClick={() => setPrintPosition('back')}
+              className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'back' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
+            >
+              Costas
+            </button>
+            <button
+              type="button"
+              onClick={() => setPrintPosition('leftSleeve')}
+              className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'leftSleeve' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
+            >
+              Manga Esq.
+            </button>
+            <button
+              type="button"
+              onClick={() => setPrintPosition('rightSleeve')}
+              className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'rightSleeve' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
+            >
+              Manga Dir.
+            </button>
+          </div>
+        </div>
+
+        {/* 3. Modelo */}
         <div className="animate-slideIn delay-150">
-          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">2. Modelo</label>
+          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">3. Modelo</label>
           <div className="grid grid-cols-2 gap-2">
             {CATEGORIES.map(cat => (
               <button 
@@ -614,9 +657,9 @@ const MainApp: React.FC = () => {
           </div>
         </div>
 
-        {/* 3. Cor */}
+        {/* 4. Cor */}
         <div className="animate-slideIn delay-200">
-          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">3. Cor</label>
+          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">4. Cor</label>
           <div className="flex flex-wrap gap-2.5">
             {COLORS.map(c => {
               if (c.hex === 'gradient') {
@@ -650,38 +693,47 @@ const MainApp: React.FC = () => {
           </div>
         </div>
 
-        {/* 4. Estilo */}
+        {/* 5. Estilo */}
         <div className="animate-slideIn delay-300">
-          <label htmlFor="promptDesktop" className="block text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4">4. Estilo</label>
+          <label htmlFor="promptDesktop" className="block text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4">5. Estilo</label>
           <textarea id="promptDesktop" value={prompt} onChange={e => setPrompt(e.target.value)} rows={2} className="w-full bg-base-300 border border-base-300 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-brand-primary outline-none" placeholder="Ex: iluminação solar..."></textarea>
         </div>
 
-        {/* 5. Posição da Estampa */}
-        <div className="animate-slideIn delay-300">
-          <label htmlFor="collarDistanceDesktop" className="block text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 flex justify-between">
-            <span>5. Posição da Estampa</span>
-            <span className="text-brand-primary font-black">{collarDistance}%</span>
-          </label>
-          <input 
-            id="collarDistanceDesktop"
-            type="range" 
-            min="0" 
-            max="35" 
-            value={collarDistance} 
-            onChange={e => setCollarDistance(parseInt(e.target.value))}
-            className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary" 
-          />
-          <div className="flex justify-between text-[8px] font-bold text-gray-500 mt-1 uppercase tracking-tighter">
-            <span>Mais Alto (0%)</span>
-            <span>Padrão (10%)</span>
-            <span>Mais Baixo (35%)</span>
+        {/* 6. Opções de Geração */}
+        <div className="space-y-3 p-4 bg-base-300/50 rounded-2xl border border-white/5 animate-slideIn">
+          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest">6. Opções de Geração</label>
+          <div className="space-y-2.5">
+            <label className="flex items-center gap-3 cursor-pointer group select-none">
+              <input 
+                type="checkbox" 
+                checked={generateModel} 
+                onChange={(e) => setGenerateModel(e.target.checked)}
+                className="checkbox checkbox-primary border-base-300 w-5 h-5 rounded-lg transition-all checked:bg-brand-primary"
+              />
+              <div className="flex flex-col">
+                <span className="text-[11px] font-bold text-gray-200 group-hover:text-white transition-colors">Gerar com Modelo Realista (Humano)</span>
+                <span className="text-[9px] text-gray-500 font-medium">Cria o design sendo vestido por um modelo humano</span>
+              </div>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer group select-none">
+              <input 
+                type="checkbox" 
+                checked={generateFlatLay} 
+                onChange={(e) => setGenerateFlatLay(e.target.checked)}
+                className="checkbox checkbox-primary border-base-300 w-5 h-5 rounded-lg transition-all checked:bg-brand-primary"
+              />
+              <div className="flex flex-col">
+                <span className="text-[11px] font-bold text-gray-200 group-hover:text-white transition-colors">Gerar apenas Camiseta Realista (Flat-lay)</span>
+                <span className="text-[9px] text-gray-500 font-medium">Cria a camiseta estendida flat-lay (sem modelo)</span>
+              </div>
+            </label>
           </div>
         </div>
 
         {error && <p className="text-red-400 text-[11px] font-bold p-2 bg-red-400/10 rounded-lg border border-red-400/20 animate-shake">{error}</p>}
         
         <button type="submit" disabled={isLoading} className="w-full bg-gradient-to-r from-brand-primary to-brand-secondary text-white font-black py-5 rounded-2xl hover:brightness-110 transition-all shadow-xl shadow-brand-primary/20 uppercase tracking-[0.2em] text-[11px]">
-          {isLoading ? 'Gerando...' : `Criar ${numMockups} Mockup(s)`}
+          {isLoading ? 'Gerando...' : (numMockups === 1 ? 'Criar 1 Mockup' : (numMockups === 2 ? 'Criar 2 Mockups' : 'Criar Mockup'))}
         </button>
       </form>
     );
