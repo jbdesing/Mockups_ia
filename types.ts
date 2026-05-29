@@ -5,7 +5,7 @@ export type Category =
   | 'camiseta-infantil-masculina' 
   | 'camiseta-infantil-feminina';
 
-export type ImageLocation = 'front' | 'back';
+export type ImageLocation = 'front' | 'back' | 'leftSleeve' | 'rightSleeve';
 export type PrintSize = 'filled' | 'localized';
 
 export interface ImageState {

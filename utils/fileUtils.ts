@@ -43,51 +43,79 @@ export const resizeImage = (base64Str: string, maxWidth = 1024, maxHeight = 1024
     });
 };
 
-export const downloadBase64Image = (base64Data: string, filename: string) => {
-    const link = document.createElement('a');
-    link.href = base64Data;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+export const downloadBase64Image = async (imgUrl: string, filename: string) => {
+    try {
+        if (imgUrl.startsWith('data:')) {
+            const link = document.createElement('a');
+            link.href = imgUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } else {
+            // Public URL download mechanism using Blobs to prevent browser CORS download blocking
+            const res = await fetch(imgUrl);
+            const blob = await res.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(blobUrl);
+        }
+    } catch (err) {
+        console.error('Failed to download image directly:', err);
+        // Safe fallback: open in new tab if CORS/network fails
+        window.open(imgUrl, '_blank');
+    }
 };
 
-export const flattenImageOnBackground = (base64Str: string, bgColorHex: string | null, topPaddingPercent = 0, printSizePercent = 45): Promise<string> => {
+export const flattenImageOnBackground = (
+    base64Str: string, 
+    bgColorHex: string | null, 
+    topPaddingPercent = 0, 
+    printSizePercent = 45,
+    isBack = false,
+    printOffsetXPercent = 0
+): Promise<string> => {
     return new Promise((resolve) => {
         const img = new Image();
         img.src = base64Str;
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
+            // We use a high resolution 1600x1600 fixed square canvas
+            canvas.width = 1600;
+            canvas.height = 1600;
             const ctx = canvas.getContext('2d');
             if (ctx) {
-                if (bgColorHex) {
-                    ctx.fillStyle = bgColorHex;
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                } else {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                }
+                // 1. Fill the entire canvas with the exact fabric color (matches shirt color)
+                // This acts as the physical t-shirt fabric backdrop
+                const fabricColor = bgColorHex || '#ffffff';
+                ctx.fillStyle = fabricColor;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
                 
-                // Proportional print scaling calculation
+                // 2. Proportional chest-width scale calculation
+                // Define chest width as 650px (representing standard chest width on the t-shirt front)
+                const chestWidth = 650;
                 const sizeFactor = printSizePercent / 100;
-                let drawWidth = canvas.width * sizeFactor;
-                let drawHeight = canvas.height * sizeFactor;
                 
-                let shiftY = canvas.height * (topPaddingPercent / 100);
-
-                // Auto-scale to prevent overflowing the bottom of the canvas
-                if (shiftY + drawHeight > canvas.height) {
-                    const maxAllowedHeight = canvas.height - shiftY;
-                    const overflowScale = maxAllowedHeight / drawHeight;
-                    drawHeight = maxAllowedHeight;
-                    drawWidth = drawWidth * overflowScale;
-                }
-
-                // Center horizontally
-                const shiftX = (canvas.width - drawWidth) / 2;
+                let drawWidth = chestWidth * sizeFactor;
+                const imgAspectRatio = img.height / img.width;
+                let drawHeight = drawWidth * imgAspectRatio;
                 
-                ctx.drawImage(img, shiftX, shiftY, drawWidth, drawHeight);
+                // Centered horizontally on the shirt canvas + horizontal slider shift
+                const shiftX = canvas.width * (printOffsetXPercent / 100) * 0.8;
+                let drawX = (canvas.width - drawWidth) / 2 + shiftX;
+                
+                // 3. Neckline vertical offset positioning
+                const startY = canvas.height * 0.20; // Neckline start position
+                const shiftY = canvas.height * (topPaddingPercent / 100) * 0.8;
+                let drawY = startY + shiftY;
+                
+                // 4. Paste the design exactly as-is (pixel perfect, zero deformation)
+                ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
             }
             resolve(canvas.toDataURL('image/png'));
         };

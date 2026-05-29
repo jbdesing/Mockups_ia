@@ -32,6 +32,7 @@ export const MockupCard: React.FC<MockupCardProps> = ({ image, onDownload, onRed
       <div className="p-4 bg-base-200/90 backdrop-blur-sm shrink-0">
         <div className="flex space-x-2">
             <button
+                type="button"
                 onClick={onDownload}
                 className="flex-1 bg-green-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-green-700 active:scale-95 transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg"
             >
@@ -39,6 +40,7 @@ export const MockupCard: React.FC<MockupCardProps> = ({ image, onDownload, onRed
                 Baixar
             </button>
             <button
+                type="button"
                 onClick={onRedo}
                 className="flex-1 bg-base-300 text-white font-semibold py-2 px-4 rounded-md hover:bg-base-300/80 active:scale-95 transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg"
             >

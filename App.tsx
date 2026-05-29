@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { fileToBase64, downloadBase64Image, resizeImage, flattenImageOnBackground } from './utils/fileUtils';
 import type { GeneratedImage, Category, ImageLocation, PrintSize, ImagesState, MockupGenerationOptions } from './types';
 import { MockupCard } from './components/MockupCard';
+import { ThreeCanvas } from './components/ThreeCanvas';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthScreens } from './components/AuthScreens';
 import { UsageBar } from './components/UsageBar';
@@ -142,21 +143,61 @@ const MainApp: React.FC = () => {
   const [designImage, setDesignImage] = useState<{ file: File | null, base64: string | null } | null>(null);
   const [printPosition, setPrintPosition] = useState<ImageLocation>('front');
   const [printSize, setPrintSize] = useState<number>(45);
+  const [printOffsetX, setPrintOffsetX] = useState<number>(0); // -30 to 30 horizontal shift
   const [category, setCategory] = useState<Category>('camiseta-masculina');
   const [color, setColor] = useState<string>('white');
   const [prompt, setPrompt] = useState<string>('');
   const [collarDistance, setCollarDistance] = useState<number>(10);
-  /* Fulfill requirement: Default to 2 mockups (realistic and product only) */
-  const NUM_MOCKUPS = 2;
+  const [generateModel, setGenerateModel] = useState<boolean>(true); // checkbox Gerar Humano
+  const [generateFlatLay, setGenerateFlatLay] = useState<boolean>(true); // checkbox Gerar Camiseta Plana
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isFinishing, setIsFinishing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
   const [view, setView] = useState<'generator' | 'account' | 'plans'>('generator');
   const [showWelcome, setShowWelcome] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   const finishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
+
+  const handleClearAll = () => {
+    setDesignImage(null);
+    setGeneratedImages([]);
+    setPrintSize(45);
+    setCollarDistance(10);
+    setPrintOffsetX(0);
+    setGenerateModel(true);
+    setGenerateFlatLay(true);
+    setColor('white');
+    setPrintPosition('front');
+    setPrompt('');
+    setError(null);
+  };
+
+  const handleDownloadDraft = () => {
+    const canvas = document.getElementById('three-customizer-canvas') as HTMLCanvasElement | null;
+    if (canvas) {
+      try {
+        const dataUrl = canvas.toDataURL('image/png');
+        downloadBase64Image(dataUrl, 'rascunho-mockup-3d.png');
+      } catch (err) {
+        console.error('Failed to capture canvas screenshot:', err);
+        setError('Erro ao gerar captura do rascunho 3D. Tente novamente.');
+      }
+    } else {
+      setError('WebGL Canvas não encontrado.');
+    }
+  };
 
   useEffect(() => {
     if (user && user.plan !== 'free') {
@@ -168,11 +209,11 @@ const MainApp: React.FC = () => {
     }
   }, [user]);
 
-  const checkUsageLimit = (): boolean => {
+  const checkUsageLimit = (numMockups: number): boolean => {
     if (!user) return false;
     if (user.plan === 'free') {
-      if (user.trialUses < NUM_MOCKUPS) {
-        setError(`Apenas ${user.trialUses} avaliações grátis restantes. Você tentou gerar ${NUM_MOCKUPS}.`);
+      if (user.trialUses < numMockups) {
+        setError(`Apenas ${user.trialUses} avaliações grátis restantes. Você tentou gerar ${numMockups}.`);
         setView('plans');
         return false;
       }
@@ -181,12 +222,12 @@ const MainApp: React.FC = () => {
     const limits = { basic: { daily: 15, monthly: 450 }, intermediate: { daily: 50, monthly: 1500 }, premium: { daily: 99999, monthly: 999999 } };
     const pLimit = limits[user.plan as keyof typeof limits];
 
-    if (pLimit && (user.dailyUses + NUM_MOCKUPS) > pLimit.daily) {
-      setError(`Limite diário insuficiente. Você tentou gerar ${NUM_MOCKUPS}, mas só tem ${(pLimit.daily - user.dailyUses)} usos diários restantes.`);
+    if (pLimit && (user.dailyUses + numMockups) > pLimit.daily) {
+      setError(`Limite diário insuficiente. Você tentou gerar ${numMockups}, mas só tem ${(pLimit.daily - user.dailyUses)} usos diários restantes.`);
       setView('plans');
       return false;
     }
-    if (pLimit && ((user.monthlyUses || 0) + NUM_MOCKUPS) > pLimit.monthly) {
+    if (pLimit && ((user.monthlyUses || 0) + numMockups) > pLimit.monthly) {
         setError(`Limite mensal insuficiente. Você tem ${(pLimit.monthly - (user.monthlyUses || 0))} usos mensais restantes.`);
         setView('plans');
         return false;
@@ -246,10 +287,16 @@ const MainApp: React.FC = () => {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
-    if (!checkUsageLimit()) return;
+    const numMockups = (generateModel ? 1 : 0) + (generateFlatLay ? 1 : 0);
+    if (!checkUsageLimit(numMockups)) return;
 
     if (!designImage?.base64) {
       setError('Envie uma estampa para começar.');
+      return;
+    }
+
+    if (!generateModel && !generateFlatLay) {
+      setError('Selecione pelo menos uma opção de mockup (Humano ou Flat-lay) para gerar.');
       return;
     }
 
@@ -265,25 +312,44 @@ const MainApp: React.FC = () => {
       ? (selectedColorObj.hex !== 'gradient' ? selectedColorObj.hex : null)
       : (color.startsWith('#') ? color : null);
 
-    // Apply background flattening, collar distance shift, and print size percentage scaling
-    const processedImage = await flattenImageOnBackground(designImage.base64, targetBgHex, collarDistance, printSize);
+    const isBack = printPosition === 'back';
+    // Apply background flattening, collar distance shift, horizontal offset and print size percentage scaling
+    const processedImage = await flattenImageOnBackground(designImage.base64, targetBgHex, collarDistance, printSize, isBack, printOffsetX);
     
     const colorDesc = color === 'all colors' 
       ? 'a complementary color' 
       : (color.startsWith('#') ? `custom hex color ${color}` : color);
     
-    const isBack = printPosition === 'back';
-    const activeLocDesc = isBack ? 'back' : 'chest/front';
-    const oppositeLocDesc = isBack ? 'chest/front' : 'back';
+    const activeLocDesc = printPosition === 'back' 
+      ? 'back' 
+      : (printPosition === 'leftSleeve' 
+          ? 'left sleeve' 
+          : (printPosition === 'rightSleeve' ? 'right sleeve' : 'chest/front'));
+          
+    const oppositeLocDesc = printPosition === 'back' ? 'chest/front' : 'back';
     const finalEmptyInstruction = `IMPORTANT: The ${oppositeLocDesc} of the shirt MUST be COMPLETELY PLAIN and solid ${colorDesc}, with absolutely NO designs, text, or patterns.`;
 
-    const selectedVariations = isBack ? [
-      { type: 'human', suffix: 'Back view shot, showing the rear of the t-shirt, model from behind with high-end studio lighting.' },
-      { type: 'product', suffix: 'High-quality product only shot showing the back of the t-shirt, rear flat lay view.' }
-    ] : [
-      { type: 'human', suffix: 'Frontal shot with high-end studio lighting.' },
-      { type: 'product', suffix: 'High-quality product only shot, clean flat lay.' }
-    ];
+    let humanSuffix = 'Frontal shot with high-end studio lighting.';
+    let productSuffix = 'High-quality product only shot, clean flat lay.';
+    
+    if (printPosition === 'back') {
+      humanSuffix = 'Back view shot, showing the rear of the t-shirt, model from behind with high-end studio lighting.';
+      productSuffix = 'High-quality product only shot showing the back of the t-shirt, rear flat lay view.';
+    } else if (printPosition === 'leftSleeve') {
+      humanSuffix = 'Side profile view showing a model wearing a t-shirt with the print applied on the left sleeve, high-end studio lighting.';
+      productSuffix = 'Side profile product lay shot of the left side of the t-shirt, showing the left sleeve print.';
+    } else if (printPosition === 'rightSleeve') {
+      humanSuffix = 'Side profile view showing a model wearing a t-shirt with the print applied on the right sleeve, high-end studio lighting.';
+      productSuffix = 'Side profile product lay shot of the right side of the t-shirt, showing the right sleeve print.';
+    }
+
+    const selectedVariations = [];
+    if (generateModel) {
+      selectedVariations.push({ type: 'human', suffix: humanSuffix });
+    }
+    if (generateFlatLay) {
+      selectedVariations.push({ type: 'product', suffix: productSuffix });
+    }
 
     try {
       const promises = selectedVariations.map(async (v, idx) => {
@@ -322,8 +388,9 @@ const MainApp: React.FC = () => {
       ? (selectedColorObj.hex !== 'gradient' ? selectedColorObj.hex : null)
       : (color.startsWith('#') ? color : null);
 
-    // Apply background flattening, collar distance shift, and print size percentage scaling
-    const processedImage = await flattenImageOnBackground(designImage.base64, targetBgHex, collarDistance, printSize);
+    const isBack = printPosition === 'back';
+    // Apply background flattening, collar distance shift, horizontal offset and print size percentage scaling
+    const processedImage = await flattenImageOnBackground(designImage.base64, targetBgHex, collarDistance, printSize, isBack, printOffsetX);
 
     try {
       const base64 = await callGemini({ images: [processedImage], prompt: imageToRedo.prompt });
@@ -355,6 +422,511 @@ const MainApp: React.FC = () => {
     });
   };
 
+  const renderViewer = () => (
+    <div className="flex-grow bg-base-200/30 rounded-[40px] border-2 border-dashed border-white/5 relative flex items-center justify-center overflow-hidden min-h-[60vh] w-full">
+        
+        {/* Floating Actions Panel */}
+        {designImage?.base64 && !isLoading && (
+          <div className="absolute top-4 left-4 flex gap-2.5 z-20 pointer-events-auto select-none animate-slideIn">
+            <button 
+              type="button"
+              onClick={handleClearAll}
+              className="bg-base-300/80 backdrop-blur-md px-3.5 py-2.5 rounded-2xl border border-white/5 shadow-xl hover:bg-base-300 hover:border-red-500/30 text-gray-400 hover:text-red-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all cursor-pointer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6"/></svg>
+              Limpar Dados
+            </button>
+            {generatedImages.length === 0 && (
+              <button 
+                type="button"
+                onClick={handleDownloadDraft}
+                className="bg-base-300/80 backdrop-blur-md px-3.5 py-2.5 rounded-2xl border border-white/5 shadow-xl hover:bg-base-300 hover:border-brand-primary/30 text-gray-400 hover:text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                Baixar Rascunho
+              </button>
+            )}
+          </div>
+        )}
+
+        {isLoading && (
+            <div className={`absolute inset-0 flex flex-col items-center justify-center z-20 bg-base-200/60 backdrop-blur-sm transition-opacity duration-500 ${isFinishing ? 'opacity-0' : 'opacity-100'}`}>
+                <div className="w-16 h-16 border-4 border-white/10 border-t-brand-primary rounded-full animate-spin mb-4"></div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-white animate-pulse">Finalizando seus Mockups...</p>
+            </div>
+        )}
+
+        {generatedImages.length > 0 ? (
+            <div className={`w-full h-full p-4 md:p-8 animate-fadeIn transition-all duration-700 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto max-h-[85vh] ${isLoading ? 'scale-95 blur-md' : 'scale-100 blur-0'}`}>
+                {generatedImages.map((img) => (
+                    <MockupCard 
+                        key={img.id}
+                        image={img} 
+                        onDownload={() => handleDownload(img)} 
+                        onRedo={() => handleRedoSingle(img)}
+                        onImageLoad={handleImageLoad}
+                    />
+                ))}
+            </div>
+        ) : !isLoading && (
+            designImage?.base64 ? (
+                <div className="w-full h-full min-h-[60vh] flex items-center justify-center animate-fadeIn">
+                    <ThreeCanvas 
+                        designBase64={designImage.base64}
+                        printSize={printSize}
+                        collarDistance={collarDistance}
+                        printPosition={printPosition}
+                        printOffsetX={printOffsetX}
+                        shirtColorHex={
+                            (() => {
+                                const selectedColorObj = COLORS.find(c => c.value === color);
+                                return selectedColorObj
+                                    ? (selectedColorObj.hex !== 'gradient' ? selectedColorObj.hex : '#ffffff')
+                                    : (color.startsWith('#') ? color : '#ffffff');
+                            })()
+                        }
+                    />
+                </div>
+            ) : (
+                <div className="text-center p-8 animate-fadeIn max-w-md flex flex-col items-center justify-center">
+                    <div className="mb-6 inline-flex p-5 bg-brand-primary/10 rounded-full text-brand-primary animate-pulse">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+                    </div>
+                    <h3 className="text-lg font-black uppercase tracking-[0.2em] text-white">MOCKUPS 3D STUDIO</h3>
+                    <p className="text-gray-400 text-xs mt-2 leading-relaxed font-medium">
+                        Carregue sua estampa e configure o tamanho na barra lateral para visualizar seu design em tempo real em um manequim 3D interativo!
+                    </p>
+                </div>
+            )
+        )}
+    </div>
+  );
+
+  const renderDesktopForm = () => {
+    const numMockups = (generateModel ? 1 : 0) + (generateFlatLay ? 1 : 0);
+    return (
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* 1. Configuração de Áreas */}
+        <div className="animate-slideIn space-y-4">
+          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest">
+            1. Configuração de Áreas
+          </label>
+          
+          {/* Drag & Drop Box */}
+          <div className={`p-4 border rounded-2xl transition-all duration-300 group bg-base-100/30 ${!designImage ? 'border-base-300 hover:border-brand-primary/50' : 'border-brand-primary/30'}`}>
+            <div className="flex justify-center px-4 pt-4 pb-4 border-2 border-base-300 border-dashed rounded-xl transition-all duration-300 hover:border-brand-primary hover:bg-brand-primary/5 relative">
+              {designImage?.base64 && (
+                <button 
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleClearAll(); }}
+                  className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors z-10 shadow-lg shadow-red-500/20"
+                  title="Remover imagem"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+              )}
+              <div className="space-y-1 text-center w-full">
+                {designImage?.base64 ? (
+                  <div className="relative group/preview inline-block">
+                    <img src={designImage.base64} alt="Preview" className="mx-auto h-24 w-24 object-contain rounded-lg shadow-md transition-transform duration-300 group-hover/preview:scale-105" />
+                  </div>
+                ) : (
+                  <svg className="mx-auto h-12 w-12 transition-colors duration-300 text-gray-400 group-hover:text-brand-primary drop-shadow-sm" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 4v.01M28 8L36 16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                )}
+                <div className="flex text-sm text-gray-400 justify-center mt-3">
+                  <label htmlFor="design-file-upload-desktop" className="relative cursor-pointer bg-base-300 hover:bg-base-300/80 rounded-lg font-black text-[10px] uppercase tracking-widest text-brand-primary hover:text-brand-secondary focus-within:outline-none transition-all duration-200 px-4 py-2 shadow-sm border border-base-300">
+                    <span>{designImage?.base64 ? 'Trocar Desenho' : 'Carregar Desenho'}</span>
+                    <input id="design-file-upload-desktop" name="design-file-upload-desktop" type="file" className="sr-only" accept="image/png, image/jpeg, image/jpg" onChange={handleFileChange} />
+                  </label>
+                </div>
+                <p className="text-[9px] text-gray-500 mt-2 font-bold tracking-wider">PNG, JPG até 10MB</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Local de Aplicação */}
+          <div className="space-y-2">
+            <label className="block text-[10px] font-black uppercase text-gray-400 tracking-widest">Local de Aplicação</label>
+            <div className="grid grid-cols-2 gap-1.5 bg-base-300 p-1.5 rounded-xl border border-white/5">
+              <button
+                type="button"
+                onClick={() => setPrintPosition('front')}
+                className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'front' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
+              >
+                Frente
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintPosition('back')}
+                className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'back' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
+              >
+                Costas
+              </button>
+            </div>
+          </div>
+
+          {/* Proportional Size Slider */}
+          {designImage?.base64 && (
+            <div className="space-y-2 animate-fadeIn p-4 bg-base-300/50 rounded-2xl border border-white/5">
+              <div className="flex justify-between items-center">
+                <label htmlFor="printSizeDesktop" className="text-[10px] font-black uppercase text-gray-400 tracking-widest">
+                  Tamanho da Estampa
+                </label>
+                <span className="text-brand-primary font-black text-xs">{printSize}%</span>
+              </div>
+              <input
+                id="printSizeDesktop"
+                type="range"
+                min="10"
+                max="100"
+                value={printSize}
+                onChange={(e) => setPrintSize(parseInt(e.target.value))}
+                className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary"
+              />
+              <div className="flex justify-between text-[8px] font-bold text-gray-500 uppercase tracking-tighter">
+                <span>Menor (10%)</span>
+                <span>Padrão (45%)</span>
+                <span>Máximo (100%)</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 2. Modelo */}
+        <div className="animate-slideIn delay-150">
+          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">2. Modelo</label>
+          <div className="grid grid-cols-2 gap-2">
+            {CATEGORIES.map(cat => (
+              <button 
+                type="button" 
+                key={cat.id} 
+                onClick={() => setCategory(cat.id)} 
+                className={`px-3 py-3 rounded-xl transition-all flex flex-col items-center justify-center text-center ${category === cat.id ? 'bg-brand-primary text-white shadow-lg' : 'bg-base-300 text-gray-500'}`}
+              >
+                <span className="text-[10px] font-black uppercase">{cat.name}</span>
+                {cat.description && (
+                  <span className={`text-[8px] mt-1 font-medium leading-tight ${category === cat.id ? 'text-white/80' : 'text-gray-400'}`}>
+                    {cat.description}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 3. Cor */}
+        <div className="animate-slideIn delay-200">
+          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">3. Cor</label>
+          <div className="flex flex-wrap gap-2.5">
+            {COLORS.map(c => {
+              if (c.hex === 'gradient') {
+                return (
+                  <div key={c.value} className="relative inline-block">
+                    <button 
+                      type="button" 
+                      onClick={() => colorInputRef.current?.click()} 
+                      className={`w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center relative overflow-hidden group/custom ${color.startsWith('#') ? 'border-brand-primary scale-110 shadow-lg' : 'border-base-300'}`} 
+                      style={{ background: color.startsWith('#') ? color : 'linear-gradient(to right, #ef4444, #fbbf24, #3b82f6)' }}
+                      title="Escolher cor personalizada"
+                    >
+                      {!color.startsWith('#') && (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-md group-hover/custom:scale-125 transition-transform"><path d="M12 5v14M5 12h14"/></svg>
+                      )}
+                    </button>
+                    <input 
+                      ref={colorInputRef} 
+                      type="color" 
+                      value={color.startsWith('#') ? color : '#4f46e5'} 
+                      onChange={e => setColor(e.target.value)} 
+                      className="sr-only" 
+                    />
+                  </div>
+                );
+              }
+              return (
+                <button type="button" key={c.value} onClick={() => setColor(c.value)} className={`w-8 h-8 rounded-full border-2 transition-all ${color === c.value ? 'border-brand-primary scale-110 shadow-lg' : 'border-base-300'}`} style={{ background: c.hex }}></button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 4. Estilo */}
+        <div className="animate-slideIn delay-300">
+          <label htmlFor="promptDesktop" className="block text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4">4. Estilo</label>
+          <textarea id="promptDesktop" value={prompt} onChange={e => setPrompt(e.target.value)} rows={2} className="w-full bg-base-300 border border-base-300 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-brand-primary outline-none" placeholder="Ex: iluminação solar..."></textarea>
+        </div>
+
+        {/* 5. Posição da Estampa */}
+        <div className="animate-slideIn delay-300">
+          <label htmlFor="collarDistanceDesktop" className="block text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 flex justify-between">
+            <span>5. Posição da Estampa</span>
+            <span className="text-brand-primary font-black">{collarDistance}%</span>
+          </label>
+          <input 
+            id="collarDistanceDesktop"
+            type="range" 
+            min="0" 
+            max="35" 
+            value={collarDistance} 
+            onChange={e => setCollarDistance(parseInt(e.target.value))}
+            className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary" 
+          />
+          <div className="flex justify-between text-[8px] font-bold text-gray-500 mt-1 uppercase tracking-tighter">
+            <span>Mais Alto (0%)</span>
+            <span>Padrão (10%)</span>
+            <span>Mais Baixo (35%)</span>
+          </div>
+        </div>
+
+        {error && <p className="text-red-400 text-[11px] font-bold p-2 bg-red-400/10 rounded-lg border border-red-400/20 animate-shake">{error}</p>}
+        
+        <button type="submit" disabled={isLoading} className="w-full bg-gradient-to-r from-brand-primary to-brand-secondary text-white font-black py-5 rounded-2xl hover:brightness-110 transition-all shadow-xl shadow-brand-primary/20 uppercase tracking-[0.2em] text-[11px]">
+          {isLoading ? 'Gerando...' : `Criar ${numMockups} Mockup(s)`}
+        </button>
+      </form>
+    );
+  };
+
+  const renderMobileForm = () => {
+    return (
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* 1. Enviar Estampa */}
+        <div className="animate-slideIn space-y-4">
+          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest">1. Enviar Estampa</label>
+          
+          {/* Drag & Drop Box */}
+          <div className={`p-4 border rounded-2xl transition-all duration-300 group bg-base-100/30 ${!designImage ? 'border-base-300 hover:border-brand-primary/50' : 'border-brand-primary/30'}`}>
+            <div className="flex justify-center px-4 pt-4 pb-4 border-2 border-base-300 border-dashed rounded-xl transition-all duration-300 hover:border-brand-primary hover:bg-brand-primary/5 relative">
+              {designImage?.base64 && (
+                <button 
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleClearAll(); }}
+                  className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors z-10 shadow-lg shadow-red-500/20"
+                  title="Remover imagem"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+              )}
+              <div className="space-y-1 text-center w-full">
+                {designImage?.base64 ? (
+                  <div className="relative group/preview inline-block">
+                    <img src={designImage.base64} alt="Preview" className="mx-auto h-24 w-24 object-contain rounded-lg shadow-md transition-transform duration-300 group-hover/preview:scale-105" />
+                  </div>
+                ) : (
+                  <svg className="mx-auto h-12 w-12 transition-colors duration-300 text-gray-400 group-hover:text-brand-primary drop-shadow-sm" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 4v.01M28 8L36 16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                )}
+                <div className="flex text-sm text-gray-400 justify-center mt-3">
+                  <label htmlFor="design-file-upload-mobile" className="relative cursor-pointer bg-base-300 hover:bg-base-300/80 rounded-lg font-black text-[10px] uppercase tracking-widest text-brand-primary hover:text-brand-secondary focus-within:outline-none transition-all duration-200 px-4 py-2 shadow-sm border border-base-300">
+                    <span>{designImage?.base64 ? 'Trocar Desenho' : 'Carregar Desenho'}</span>
+                    <input id="design-file-upload-mobile" name="design-file-upload-mobile" type="file" className="sr-only" accept="image/png, image/jpeg, image/jpg" onChange={handleFileChange} />
+                  </label>
+                </div>
+                <p className="text-[9px] text-gray-500 mt-2 font-bold tracking-wider">PNG, JPG até 10MB</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Local de Aplicação */}
+        <div className="animate-slideIn space-y-2">
+          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest">2. Local de Aplicação</label>
+          <div className="grid grid-cols-2 gap-1.5 bg-base-300 p-1.5 rounded-xl border border-white/5">
+            <button
+              type="button"
+              onClick={() => setPrintPosition('front')}
+              className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'front' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
+            >
+              Frente
+            </button>
+            <button
+              type="button"
+              onClick={() => setPrintPosition('back')}
+              className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'back' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
+            >
+              Costas
+            </button>
+            <button
+              type="button"
+              onClick={() => setPrintPosition('leftSleeve')}
+              className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'leftSleeve' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
+            >
+              Manga Esq.
+            </button>
+            <button
+              type="button"
+              onClick={() => setPrintPosition('rightSleeve')}
+              className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'rightSleeve' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
+            >
+              Manga Dir.
+            </button>
+          </div>
+        </div>
+
+        {/* 3. Modelo */}
+        <div className="animate-slideIn">
+          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">3. Modelo</label>
+          <div className="grid grid-cols-2 gap-2">
+            {CATEGORIES.map(cat => (
+              <button 
+                type="button" 
+                key={cat.id} 
+                onClick={() => setCategory(cat.id)} 
+                className={`px-3 py-3 rounded-xl transition-all flex flex-col items-center justify-center text-center ${category === cat.id ? 'bg-brand-primary text-white shadow-lg' : 'bg-base-300 text-gray-500'}`}
+              >
+                <span className="text-[10px] font-black uppercase">{cat.name}</span>
+                {cat.description && (
+                  <span className={`text-[8px] mt-1 font-medium leading-tight ${category === cat.id ? 'text-white/80' : 'text-gray-400'}`}>
+                    {cat.description}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 4. Cor */}
+        <div className="animate-slideIn">
+          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">4. Cor</label>
+          <div className="flex flex-wrap gap-2.5">
+            {COLORS.map(c => {
+              if (c.hex === 'gradient') {
+                return (
+                  <div key={c.value} className="relative inline-block">
+                    <button 
+                      type="button" 
+                      onClick={() => colorInputRef.current?.click()} 
+                      className={`w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center relative overflow-hidden group/custom ${color.startsWith('#') ? 'border-brand-primary scale-110 shadow-lg' : 'border-base-300'}`} 
+                      style={{ background: color.startsWith('#') ? color : 'linear-gradient(to right, #ef4444, #fbbf24, #3b82f6)' }}
+                      title="Escolher cor personalizada"
+                    >
+                      {!color.startsWith('#') && (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-md group-hover/custom:scale-125 transition-transform"><path d="M12 5v14M5 12h14"/></svg>
+                      )}
+                    </button>
+                    <input 
+                      ref={colorInputRef} 
+                      type="color" 
+                      value={color.startsWith('#') ? color : '#4f46e5'} 
+                      onChange={e => setColor(e.target.value)} 
+                      className="sr-only" 
+                    />
+                  </div>
+                );
+              }
+              return (
+                <button type="button" key={c.value} onClick={() => setColor(c.value)} className={`w-8 h-8 rounded-full border-2 transition-all ${color === c.value ? 'border-brand-primary scale-110 shadow-lg' : 'border-base-300'}`} style={{ background: c.hex }}></button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 5. Estilo */}
+        <div className="animate-slideIn">
+          <label htmlFor="promptMobile" className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">5. Estilo</label>
+          <textarea id="promptMobile" value={prompt} onChange={e => setPrompt(e.target.value)} rows={2} className="w-full bg-base-300 border border-base-300 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-brand-primary outline-none" placeholder="Ex: iluminação solar..."></textarea>
+        </div>
+
+        {/* 6. Opções de Geração */}
+        <div className="space-y-3 p-4 bg-base-300/50 rounded-2xl border border-white/5 animate-slideIn">
+          <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest">6. Opções de Geração</label>
+          <div className="space-y-2.5">
+            <label className="flex items-center gap-3 cursor-pointer group select-none">
+              <input 
+                type="checkbox" 
+                checked={generateModel} 
+                onChange={(e) => setGenerateModel(e.target.checked)}
+                className="checkbox checkbox-primary border-base-300 w-5 h-5 rounded-lg transition-all checked:bg-brand-primary"
+              />
+              <div className="flex flex-col">
+                <span className="text-[11px] font-bold text-gray-200 group-hover:text-white transition-colors">Gerar com Modelo Realista (Humano)</span>
+                <span className="text-[9px] text-gray-500 font-medium">Cria o design sendo vestido por um modelo humano</span>
+              </div>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer group select-none">
+              <input 
+                type="checkbox" 
+                checked={generateFlatLay} 
+                onChange={(e) => setGenerateFlatLay(e.target.checked)}
+                className="checkbox checkbox-primary border-base-300 w-5 h-5 rounded-lg transition-all checked:bg-brand-primary"
+              />
+              <div className="flex flex-col">
+                <span className="text-[11px] font-bold text-gray-200 group-hover:text-white transition-colors">Gerar apenas Camiseta Realista (Flat-lay)</span>
+                <span className="text-[9px] text-gray-500 font-medium">Cria a camiseta estendida flat-lay (sem modelo)</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {/* 7. Ajustes Finos */}
+        {designImage?.base64 && (
+          <div className="space-y-4 p-4 bg-base-300/50 rounded-2xl border border-white/5 animate-fadeIn">
+            <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest">7. Ajustes Finos de Posicionamento</label>
+            
+            {/* Tamanho da Estampa */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] font-bold uppercase text-gray-400 tracking-wider">Tamanho da Estampa</span>
+                <span className="text-brand-primary font-black text-xs">{printSize}%</span>
+              </div>
+              <input
+                type="range"
+                min="10"
+                max="100"
+                value={printSize}
+                onChange={(e) => setPrintSize(parseInt(e.target.value))}
+                className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary"
+              />
+            </div>
+
+            {/* Ajuste Vertical */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] font-bold uppercase text-gray-400 tracking-wider">Ajuste Vertical</span>
+                <span className="text-brand-primary font-black text-xs">{collarDistance}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="35"
+                value={collarDistance}
+                onChange={(e) => setCollarDistance(parseInt(e.target.value))}
+                className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary"
+              />
+            </div>
+
+            {/* Ajuste Horizontal */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] font-bold uppercase text-gray-400 tracking-wider">Ajuste Horizontal</span>
+                <span className="text-brand-primary font-black text-xs">{printOffsetX > 0 ? `+${printOffsetX}` : printOffsetX}%</span>
+              </div>
+              <input
+                type="range"
+                min="-30"
+                max="30"
+                value={printOffsetX}
+                onChange={(e) => setPrintOffsetX(parseInt(e.target.value))}
+                className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 8. Exibição do 3D / Vitrine */}
+        <div className="select-none my-4">
+          {renderViewer()}
+        </div>
+
+        {error && <p className="text-red-400 text-[11px] font-bold p-2 bg-red-400/10 rounded-lg border border-red-400/20 animate-shake">{error}</p>}
+        
+        {/* 9. Botão criar mockup */}
+        <button type="submit" disabled={isLoading} className="w-full bg-gradient-to-r from-brand-primary to-brand-secondary text-white font-black py-5 rounded-2xl hover:brightness-110 transition-all shadow-xl shadow-brand-primary/20 uppercase tracking-[0.2em] text-[11px]">
+          {isLoading ? 'Gerando...' : 'Criar Mockup'}
+        </button>
+      </form>
+    );
+  };
+
   if (view === 'account') return <div className="min-h-screen bg-base-100 flex flex-col"><Header onAccount={() => setView('account')} /><MyAccount onBack={() => setView('generator')} onUpgrade={() => setView('plans')} /></div>;
   if (view === 'plans') return <div className="min-h-screen bg-base-100 flex flex-col"><Header onAccount={() => setView('account')} /><div className="p-8"><button onClick={() => setView('generator')} className="text-brand-primary text-[10px] font-black uppercase flex items-center gap-2 mb-8"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 12H5m7-7l-7 7 7 7" strokeWidth="3"/></svg> Voltar</button><PlanSelector /></div></div>;
 
@@ -366,234 +938,77 @@ const MainApp: React.FC = () => {
       <Header onAccount={() => setView('account')} />
       
       <main className="flex-grow container mx-auto p-4 md:p-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
-            <div className="lg:col-span-4 xl:col-span-3">
-                <div className="bg-base-200/80 backdrop-blur-xl rounded-3xl p-6 space-y-6 sticky top-24 shadow-2xl border border-white/5">
-                    <UsageBar />
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        <div className="animate-slideIn space-y-4">
-                            <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest">1. Configuração de Áreas</label>
-                            
-                            {/* Unified Drag & Drop Box */}
-                            <div className={`p-4 border rounded-2xl transition-all duration-300 group bg-base-100/30 ${!designImage ? 'border-base-300 hover:border-brand-primary/50' : 'border-brand-primary/30'}`}>
-                                <div className="flex justify-center px-4 pt-4 pb-4 border-2 border-base-300 border-dashed rounded-xl transition-all duration-300 hover:border-brand-primary hover:bg-brand-primary/5 relative">
-                                    {designImage?.base64 && (
-                                        <button 
-                                            type="button"
-                                            onClick={(e) => { e.stopPropagation(); setDesignImage(null); }}
-                                            className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors z-10 shadow-lg shadow-red-500/20"
-                                            title="Remover imagem"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                        </button>
-                                    )}
-                                    <div className="space-y-1 text-center w-full">
-                                        {designImage?.base64 ? (
-                                            <div className="relative group/preview inline-block">
-                                                <img src={designImage.base64} alt="Preview" className="mx-auto h-24 w-24 object-contain rounded-lg shadow-md transition-transform duration-300 group-hover/preview:scale-105" />
-                                            </div>
-                                        ) : (
-                                            <svg className="mx-auto h-12 w-12 transition-colors duration-300 text-gray-400 group-hover:text-brand-primary drop-shadow-sm" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 4v.01M28 8L36 16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                                        )}
-                                        <div className="flex text-sm text-gray-400 justify-center mt-3">
-                                            <label htmlFor="design-file-upload" className="relative cursor-pointer bg-base-300 hover:bg-base-300/80 rounded-lg font-black text-[10px] uppercase tracking-widest text-brand-primary hover:text-brand-secondary focus-within:outline-none transition-all duration-200 px-4 py-2 shadow-sm border border-base-300">
-                                                <span>{designImage?.base64 ? 'Trocar Desenho' : 'Carregar Desenho'}</span>
-                                                <input id="design-file-upload" name="design-file-upload" type="file" className="sr-only" accept="image/png, image/jpeg, image/jpg" onChange={handleFileChange} />
-                                            </label>
-                                        </div>
-                                        <p className="text-[9px] text-gray-500 mt-2 font-bold tracking-wider">PNG, JPG até 10MB</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Frente / Costas Segmented Toggle */}
-                            <div className="space-y-2">
-                                <label className="block text-[10px] font-black uppercase text-gray-400 tracking-widest">Local de Aplicação</label>
-                                <div className="grid grid-cols-2 gap-1.5 bg-base-300 p-1.5 rounded-xl border border-white/5">
-                                    <button
-                                        type="button"
-                                        onClick={() => setPrintPosition('front')}
-                                        className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'front' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
-                                    >
-                                        Frente
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setPrintPosition('back')}
-                                        className={`py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${printPosition === 'back' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20 scale-100' : 'text-gray-400 hover:text-white bg-transparent hover:bg-base-100/10'}`}
-                                    >
-                                        Costas
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Proportional Size Slider */}
-                            {designImage?.base64 && (
-                                <div className="space-y-2 animate-fadeIn p-4 bg-base-300/50 rounded-2xl border border-white/5">
-                                    <div className="flex justify-between items-center">
-                                        <label htmlFor="printSize" className="text-[10px] font-black uppercase text-gray-400 tracking-widest">
-                                            Tamanho da Estampa
-                                        </label>
-                                        <span className="text-brand-primary font-black text-xs">{printSize}%</span>
-                                    </div>
-                                    <input
-                                        id="printSize"
-                                        type="range"
-                                        min="10"
-                                        max="100"
-                                        value={printSize}
-                                        onChange={(e) => setPrintSize(parseInt(e.target.value))}
-                                        className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary"
-                                    />
-                                    <div className="flex justify-between text-[8px] font-bold text-gray-500 uppercase tracking-tighter">
-                                        <span>Menor (10%)</span>
-                                        <span>Padrão (45%)</span>
-                                        <span>Máximo (100%)</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        <div className="animate-slideIn delay-150">
-                            <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">2. Modelo</label>
-                            <div className="grid grid-cols-2 gap-2">
-                                {CATEGORIES.map(cat => (
-                                    <button 
-                                        type="button" 
-                                        key={cat.id} 
-                                        onClick={() => setCategory(cat.id)} 
-                                        className={`px-3 py-3 rounded-xl transition-all flex flex-col items-center justify-center text-center ${category === cat.id ? 'bg-brand-primary text-white shadow-lg' : 'bg-base-300 text-gray-500'}`}
-                                    >
-                                        <span className="text-[10px] font-black uppercase">{cat.name}</span>
-                                        {cat.description && (
-                                            <span className={`text-[8px] mt-1 font-medium leading-tight ${category === cat.id ? 'text-white/80' : 'text-gray-400'}`}>
-                                                {cat.description}
-                                            </span>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="animate-slideIn delay-200">
-                            <label className="block text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">3. Cor</label>
-                            <div className="flex flex-wrap gap-2.5">
-                                {COLORS.map(c => {
-                                    if (c.hex === 'gradient') {
-                                        return (
-                                            <div key={c.value} className="relative inline-block">
-                                                <button 
-                                                    type="button" 
-                                                    onClick={() => colorInputRef.current?.click()} 
-                                                    className={`w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center relative overflow-hidden group/custom ${color.startsWith('#') ? 'border-brand-primary scale-110 shadow-lg' : 'border-base-300'}`} 
-                                                    style={{ background: color.startsWith('#') ? color : 'linear-gradient(to right, #ef4444, #fbbf24, #3b82f6)' }}
-                                                    title="Escolher cor personalizada"
-                                                >
-                                                    {!color.startsWith('#') && (
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-md group-hover/custom:scale-125 transition-transform"><path d="M12 5v14M5 12h14"/></svg>
-                                                    )}
-                                                </button>
-                                                <input 
-                                                    ref={colorInputRef} 
-                                                    type="color" 
-                                                    value={color.startsWith('#') ? color : '#4f46e5'} 
-                                                    onChange={e => setColor(e.target.value)} 
-                                                    className="sr-only" 
-                                                />
-                                            </div>
-                                        );
-                                    }
-                                    return (
-                                        <button type="button" key={c.value} onClick={() => setColor(c.value)} className={`w-8 h-8 rounded-full border-2 transition-all ${color === c.value ? 'border-brand-primary scale-110 shadow-lg' : 'border-base-300'}`} style={{ background: c.hex }}></button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                        <div className="animate-slideIn delay-300">
-                            <label htmlFor="prompt" className="block text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4">4. Estilo</label>
-                            <textarea id="prompt" value={prompt} onChange={e => setPrompt(e.target.value)} rows={2} className="w-full bg-base-300 border border-base-300 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-brand-primary outline-none" placeholder="Ex: iluminação solar..."></textarea>
-                        </div>
-                        <div className="animate-slideIn delay-300">
-                            <label htmlFor="collarDistance" className="block text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 flex justify-between">
-                                <span>5. Posição da Estampa</span>
-                                <span className="text-brand-primary font-black">{collarDistance}%</span>
-                            </label>
-                            <input 
-                                id="collarDistance"
-                                type="range" 
-                                min="0" 
-                                max="35" 
-                                value={collarDistance} 
-                                onChange={e => setCollarDistance(parseInt(e.target.value))}
-                                className="w-full h-1.5 bg-base-300 rounded-lg appearance-none cursor-pointer accent-brand-primary" 
-                            />
-                            <div className="flex justify-between text-[8px] font-bold text-gray-500 mt-1 uppercase tracking-tighter">
-                                <span>Mais Alto (0%)</span>
-                                <span>Padrão (10%)</span>
-                                <span>Mais Baixo (35%)</span>
-                            </div>
-                        </div>
-                        {error && <p className="text-red-400 text-[11px] font-bold p-2 bg-red-400/10 rounded-lg border border-red-400/20 animate-shake">{error}</p>}
-                        <button type="submit" disabled={isLoading} className="w-full bg-gradient-to-r from-brand-primary to-brand-secondary text-white font-black py-5 rounded-2xl hover:brightness-110 transition-all shadow-xl shadow-brand-primary/20 uppercase tracking-[0.2em] text-[11px]">
-                            {isLoading ? 'Gerando...' : `Criar ${NUM_MOCKUPS} Mockups`}
+        {isMobile ? (
+          /* Mobile View - Single Linear Column Flow */
+          <div className="space-y-6 animate-fadeIn">
+            <UsageBar />
+            {renderMobileForm()}
+            
+            {/* Recent downloads history at the bottom of the mobile page */}
+            {user && user.downloadHistory && user.downloadHistory.length > 0 && (
+              <div className="mt-8 animate-fadeIn pt-4 border-t border-white/5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-[10px] font-black uppercase text-gray-500 tracking-[0.2em]">Downloads Recentes</h3>
+                  <button onClick={() => setView('account')} className="text-brand-primary text-[10px] font-black uppercase hover:underline">Ver Todos</button>
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                  {user.downloadHistory.slice(0, 4).map((item) => (
+                    <div key={item.id} className="group relative bg-base-200 rounded-xl overflow-hidden aspect-square border border-white/5 hover:border-brand-primary/50 transition-all shadow-lg">
+                      <img src={item.src} alt="History" className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <button 
+                          onClick={() => downloadBase64Image(item.src, `mockup-history-${item.id}.png`)}
+                          className="bg-brand-primary text-white p-1.5 rounded-full hover:scale-110 transition-transform"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         </button>
-                    </form>
-                </div>
-            </div>
-            <div className="lg:col-span-8 xl:col-span-9 flex flex-col">
-                <div className="flex-grow bg-base-200/30 rounded-[40px] border-2 border-dashed border-white/5 relative flex items-center justify-center overflow-hidden min-h-[60vh]">
-                    
-                    {isLoading && (
-                        <div className={`absolute inset-0 flex flex-col items-center justify-center z-20 bg-base-200/60 backdrop-blur-sm transition-opacity duration-500 ${isFinishing ? 'opacity-0' : 'opacity-100'}`}>
-                            <div className="w-16 h-16 border-4 border-white/10 border-t-brand-primary rounded-full animate-spin mb-4"></div>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-white animate-pulse">Finalizando seus Mockups...</p>
-                        </div>
-                    )}
-
-                    {generatedImages.length > 0 ? (
-                        <div className={`w-full h-full p-4 md:p-8 animate-fadeIn transition-all duration-700 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto max-h-[85vh] ${isLoading ? 'scale-95 blur-md' : 'scale-100 blur-0'}`}>
-                            {generatedImages.map((img) => (
-                                <MockupCard 
-                                    key={img.id}
-                                    image={img} 
-                                    onDownload={() => handleDownload(img)} 
-                                    onRedo={() => handleRedoSingle(img)}
-                                    onImageLoad={handleImageLoad}
-                                />
-                            ))}
-                        </div>
-                    ) : !isLoading && (
-                        <div className="text-center opacity-40">
-                            <h3 className="text-2xl font-black uppercase tracking-[0.3em] text-white">Sua Vitrine</h3>
-                            <p className="text-gray-500 text-sm mt-2">Configure as artes e clique em Criar.</p>
-                        </div>
-                    )}
-                </div>
-
-                {/* Recent History Section */}
-                {user && user.downloadHistory && user.downloadHistory.length > 0 && (
-                    <div className="mt-8 animate-fadeIn">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-[10px] font-black uppercase text-gray-500 tracking-[0.2em]">Downloads Recentes</h3>
-                            <button onClick={() => setView('account')} className="text-brand-primary text-[10px] font-black uppercase hover:underline">Ver Todos</button>
-                        </div>
-                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
-                            {user.downloadHistory.slice(0, user.plan === 'free' ? 4 : 8).map((item) => (
-                                <div key={item.id} className="group relative bg-base-200 rounded-xl overflow-hidden aspect-square border border-white/5 hover:border-brand-primary/50 transition-all shadow-lg">
-                                    <img src={item.src} alt="History" className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" />
-                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                         <button 
-                                            onClick={() => downloadBase64Image(item.src, `mockup-history-${item.id}.png`)}
-                                            className="bg-brand-primary text-white p-1.5 rounded-full hover:scale-110 transition-transform"
-                                         >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                         </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                      </div>
                     </div>
-                )}
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Desktop View - Exact Original Two-Column Grid */
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
+            {/* Sidebar Column (Form) */}
+            <div className="lg:col-span-4 xl:col-span-3">
+              <div className="bg-base-200/80 backdrop-blur-xl rounded-3xl p-6 space-y-6 sticky top-24 shadow-2xl border border-white/5">
+                <UsageBar />
+                {renderDesktopForm()}
+              </div>
             </div>
-        </div>
+
+            {/* Viewer Column */}
+            <div className="lg:col-span-8 xl:col-span-9 flex flex-col">
+              {renderViewer()}
+              {user && user.downloadHistory && user.downloadHistory.length > 0 && (
+                <div className="mt-8 animate-fadeIn">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-[10px] font-black uppercase text-gray-500 tracking-[0.2em]">Downloads Recentes</h3>
+                    <button onClick={() => setView('account')} className="text-brand-primary text-[10px] font-black uppercase hover:underline">Ver Todos</button>
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                    {user.downloadHistory.slice(0, user.plan === 'free' ? 4 : 8).map((item) => (
+                      <div key={item.id} className="group relative bg-base-200 rounded-xl overflow-hidden aspect-square border border-white/5 hover:border-brand-primary/50 transition-all shadow-lg">
+                        <img src={item.src} alt="History" className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" />
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <button 
+                            onClick={() => downloadBase64Image(item.src, `mockup-history-${item.id}.png`)}
+                            className="bg-brand-primary text-white p-1.5 rounded-full hover:scale-110 transition-transform"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
