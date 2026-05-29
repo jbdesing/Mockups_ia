@@ -100,6 +100,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } else if (data) {
           const today = new Date().toISOString().split('T')[0];
+          const isNewDay = data.last_use_date && data.last_use_date !== today;
+
+          if (isNewDay) {
+            console.log("Novo dia detectado! Sincronizando limites diários com o banco de dados...");
+            supabase
+              .from('customers')
+              .update({ daily_uses: 0, last_use_date: today })
+              .eq('id', sessionUser.id)
+              .then(({ error: resetError }) => {
+                if (resetError) {
+                  console.error("Erro ao resetar uso diário no banco de dados:", resetError.message);
+                } else {
+                  console.log("Limites diários resetados com sucesso no banco de dados.");
+                }
+              });
+          }
+
           setUser(prev => ({
             uid: sessionUser.id,
             email: data.email || sessionUser.email,
@@ -107,9 +124,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             plan: data.plan || 'free',
             billingCycle: data.billing_cycle || 'monthly',
             trialUses: data.trial_uses ?? 4,
-            dailyUses: data.daily_uses || 0,
+            dailyUses: isNewDay ? 0 : (data.daily_uses || 0),
             monthlyUses: data.monthly_uses || 0,
-            lastUseDate: data.last_use_date || today,
+            lastUseDate: isNewDay ? today : (data.last_use_date || today),
             renewalDate: data.renewal_date,
             downloadHistory: prev?.downloadHistory || []
           }));
